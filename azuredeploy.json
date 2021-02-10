@@ -1,0 +1,178 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "domainName": {
+      "type": "string",
+      "metadata" : {
+                "description":"Type your domain name. Ex.: contoso.com"
+       }
+    },
+    "subDomainName": {
+      "type": "string",
+       "metadata" : {
+                "description":"Type your subdomain name. Ex.: www"
+       }
+    },
+    "websiteName": {
+      "type": "string",
+      "metadata" : {
+                "description":"Web App name that will host the Custom Domain."
+      }
+    },
+    "dnsResourceGroup": {
+      "type": "string",
+      "metadata" :{
+                "description": "Resource Group where your dns zone is located. It will be used to create Cname and TXT record. Make sure you have access"
+      }
+    },
+      "existingKeyVaultId": {
+      "type": "string",
+      "metadata": {
+        "description": "Existing Key Vault resource Id with an access policy to allow Microsoft.Web RP to read Key Vault secrets (Checkout README.md for more information)"
+      }
+    },
+    "existingKeyVaultSecretName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault Secret that contains a PFX certificate"
+      }
+    } 
+  },
+  "variables": {
+    "certificateName": "[toLower(concat(parameters('subDomainName'), '.', parameters('domainName')))]",
+    "mainTempalteRG": "[resourceGroup().name]",
+    "sku": "s1",
+    "workerSize": "0",
+    "AppServicePlanName": "[concat(toLower(parameters('websiteName')), 'ASP')]"
+  },
+  "resources": [
+   {
+      "apiVersion": "2018-02-01",
+      "name": "[variables('AppServicePlanName')]",
+      "type": "Microsoft.Web/serverfarms",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "[variables('sku')]",
+        "capacity": "[variables('workerSize')]"
+      },
+      "properties": {
+        "name": "[variables('AppServicePlanName')]"
+      }
+   },
+   {
+      "apiVersion": "2018-02-01",
+      "name": "[parameters('websiteName')]",
+      "type": "Microsoft.Web/sites",
+      "location": "[resourceGroup().location]",
+        "properties": {
+        "serverFarmId": "[variables('AppServicePlanName')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('AppServicePlanName'))]"
+      ]
+   },
+   {
+      "type": "Microsoft.Web/certificates",
+      "name": "[variables('certificateName')]",
+      "apiVersion": "2020-09-01",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "keyVaultId": "[parameters('existingKeyVaultId')]",
+        "keyVaultSecretName": "[parameters('existingKeyVaultSecretName')]",
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('AppServicePlanName'))]"
+        },
+        "dependsOn": [
+          "[resourceId('Microsoft.Web/serverfarms', variables('AppServicePlanName'))]"
+      ]
+   },
+   {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-06-01",
+      "name": "nestedTemplate-CreateDNSName",
+      "resourceGroup": "[parameters('dnsResourceGroup')]",
+      "properties": 
+      {
+      "mode": "Incremental",
+      "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {},
+          "variables": {},
+          "resources": [
+            {
+              "apiVersion": "2018-05-01",
+              "name": "[parameters('domainName')]",
+              "type": "Microsoft.Network/dnszones",
+              "location": "global",
+              "properties": {
+                "zoneType": "Public"
+              }
+            },
+            {
+              "apiVersion": "2018-05-01",
+              "name": "[concat(parameters('domainName'), '/', parameters('subDomainName'))]",
+              "type": "Microsoft.Network/dnszones/CNAME",
+              "properties": {
+                "TTL": 3600,
+                "CNAMERecord": {
+                  "cname": "[concat(parameters('websiteName'), '.azurewebsites.net')]"
+                }
+              },
+              "dependsOn": [
+              ]
+            },
+            {
+              "apiVersion": "2018-05-01",
+              "name": "[concat(parameters('domainName'), '/asuid.', parameters('subDomainName'))]",
+              "type": "Microsoft.Network/dnszones/TXT",
+              "properties": {
+                "TTL": 3600,
+                "TXTRecords": [
+                  {
+                    "value": [
+                      "[reference(resourceId(variables('mainTempalteRG'),'Microsoft.Web/sites', parameters('websiteName')), '2018-02-01').customDomainVerificationId]"
+                    ]
+                  }
+                ]
+              },
+              "dependsOn": [
+             ]
+            }
+            ]
+          },
+      "parameters": {}
+      }
+    },
+
+   {
+      "apiVersion": "2018-11-01",
+      "name": "[concat(parameters('websiteName'), '/', parameters('subDomainName'),'.',parameters('domainName'))]",
+      "type": "Microsoft.Web/sites/hostNameBindings",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "sslState": "SniEnabled",
+        "thumbprint": "[reference(resourceId('Microsoft.Web/certificates', variables('certificateName'))).Thumbprint]"
+      },
+      "dependsOn": [
+        "[resourceId(parameters('dnsResourceGroup'),'Microsoft.Resources/deployments', 'nestedTemplate-CreateDNSName')]",
+        "[resourceId('Microsoft.Web/sites', parameters('websiteName'))]",
+        "[resourceId('Microsoft.Web/certificates', variables('certificateName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "subDomainName": {
+      "type": "string",
+      "value": "[concat(parameters('websiteName'), '.', parameters('domainName'))]"
+    },
+    "cert": {
+      "type": "string",
+      "value": "[concat(parameters('websiteName'), '.', parameters('domainName'), '-', parameters('websiteName'))]"
+    },
+    "certificateThumbprint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/certificates', variables('certificateName'))).thumbprint]"
+    }
+  }
+}

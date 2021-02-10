@@ -1,0 +1,24 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "domainName": {
+            "value": "eduaralm2.com"
+        },
+        "subDomainName": {
+            "value": "earth"
+        },
+        "websiteName": {
+            "value": "eduaralmtestwebsite"
+        },
+        "dnsResourceGroup": {
+            "value": "appserviceplan"
+        },
+        "existingKeyVaultId": {
+            "value": "/subscriptions/393ddd76-4ef3-4d86-920f-efe559609b90/resourceGroups/CertificatesRG/providers/Microsoft.KeyVault/vaults/KeyVaultEduaralm4"
+        },
+        "existingKeyVaultSecretName": {
+            "value": "eduaralm2com91e58e21-1b0b-44a7-a9bc-839b5a0c1444"
+        }
+    }
+}
